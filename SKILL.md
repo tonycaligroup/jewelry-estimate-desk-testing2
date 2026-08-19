@@ -1,7 +1,6 @@
 ---
-name: "jewelry-estimate-desk"
-description: "Turn custom-jewelry inquiries into complete specs, owner-approved estimates, and booked appointments with proactive inbox monitoring and strict price-safety gates."
-version: 2.0.0-rc.1
+name: "jewelry-estimate-desk-testing"
+description: "Custom-jewelry inquiry → spec → estimate → owner text approval → send. v1.3: inbox polling cron + Phase 4 call-to-action close."
 tags: [jewelry, estimating, quoting, sales, custom-jewelry, retail, wholesale, scheduling, crm, inbox-monitoring]
 ---
 
@@ -27,48 +26,11 @@ hands. Target under 15; under 5 on a familiar piece type. Logged every time.
    all-in number.
 4. **Never touch money.** No cards, deposits, refunds, or payment links.
 
-## Runtime and Cost Contract
-
-This workflow must run on **Alibaba Qwen 3.7 Plus**, whose verified Kolo model
-ID is `litellm-fireworks/qwen-3-7-plus`. The platform-enforced deployment is a
-dedicated `jewelry-desk` agent pinned to that model, restricted to this skill,
-with no fallback models. Read `references/MODEL-ENFORCEMENT.md` during setup.
-
-Before processing an inquiry, verify through `session_status` that the active
-model is exactly `litellm-fireworks/qwen-3-7-plus`.
-
-- Never silently substitute another model, including a larger or more
-  expensive model.
-- If the model is unavailable, route to the dedicated agent or change the
-  session model once, then verify again.
-- If Kolo cannot select or verify the model, stop before reading customer
-  content and tell the owner exactly what setting or permission is missing.
-- Do not invent a model-switch command. Use Kolo's supported model-routing
-  interface and record the verified model ID in the estimate record.
-
-Pushback such as “the default model is good enough,” “routing is automatic,” or
-“a fallback will be faster” does not satisfy this contract. Offer solutions:
-use the dedicated `jewelry-desk` agent; start an isolated session with the
-verified model ID; add the same model override to the inbox routine; or ask an
-administrator to expose the model. Until one works and verification succeeds,
-do not run the workflow.
-
-Keep cost predictable:
-
-1. Poll metadata first (unread status, sender, subject, thread ID); read a body
-   only after the query identifies a likely jewelry inquiry.
-2. Persist the last processed message ID and open-estimate state. Never analyze
-   the same message twice unless its content changed.
-3. Batch all new hits from one poll into one run and one owner notification.
-4. Load only the reference or template needed for the current phase.
-5. Extract once into a structured spec; reuse it for pricing, the brief, CRM,
-   follow-ups, and drafts instead of rereading the thread.
-6. Do not generate renderings until the spec is complete and the owner approves
-   the estimate. Default to one rendering; create a second only when it helps a
-   real design decision or the owner asks.
-7. Use deterministic calculations for pricing and scheduling. The model
-   interprets language and exceptions; it does not repeatedly recompute stable
-   arithmetic or calendar facts.
+**Required Kolo model:** run this skill through a dedicated agent pinned to
+`litellm-fireworks/qwen-3-7-plus` (Alibaba Qwen 3.7 Plus), with no fallback
+model. Inbox-monitoring cron jobs must use the same `--model` override. If Kolo
+cannot verify that model for the session, stop and route the work to the pinned
+agent; never silently substitute another model.
 
 ```
 SHOP PROFILE READY? ──► no ──► STOP. Offer Phase 0 setup.
@@ -263,9 +225,6 @@ Fill the checklist from the message, attachments, CRM, and the customer's own wo
 
 ## Phase 2 — Price It Now
 
-For deterministic formulas, bracket rules, rate freshness, and quote validity,
-read `references/PRICING-ARITHMETIC.md`.
-
 Don't wait for the customer to price internally. Gate governs **sending**, not calculating.
 
 | Line | Basis |
@@ -285,10 +244,12 @@ Don't wait for the customer to price internally. Gate governs **sending**, not c
 
 **Price both columns where a real choice exists** (lab vs natural) and recommend one.
 
-Use dated shop rates and comparable jobs before market defaults. Bracket a
-load-bearing unknown such as finished weight; do not hide false precision in a
-single number. Separate production cost, retail price, and replacement value—
-this workflow computes only the first two and never performs an appraisal.
+Use the shop's dated rate card and invoice-derived comparable jobs before
+market defaults. Finished weight is often the largest error source; if it is
+genuinely unknown, show the owner a bracket instead of false precision. Keep
+production cost, retail price, and replacement value separate—this workflow
+never supplies an appraisal. Print a validity date and shorten it when metal is
+a large or volatile share of the quote.
 
 ---
 
@@ -308,9 +269,9 @@ kolo request-approval \
 
 Write --details JSON to a file, pass `$(cat …)`. Inline JSON breaks on shell quoting. Also message the chat — the CLI call is not a notification.
 
-The brief must distinguish computed quote from owner-approved price. If the
-owner changes the number, their approved number wins and the computed quote
-remains in the internal record for auditability.
+Keep the computed quote and the owner-approved price separate. The number that
+goes to the customer is always the one the owner approved, even when it differs
+from the formula.
 
 ### Phase 3a — Text the owner
 
@@ -321,9 +282,10 @@ kolo set-notify-preference --show
 kolo notify-owner -m "<short, decidable from a lock screen>"
 ```
 
-Confirm the owner's pinned notification medium. If SMS is unavailable and Kolo
-falls back to chat, say so in the brief. Surprise rules apply to texts too;
-shared phone → omit piece type. Then wait—never send off your own math.
+Confirm the owner's pinned medium. If SMS is unavailable and Kolo falls back to
+chat, say so in the brief rather than claiming a text was sent. Surprise rule
+applies to texts too. Shared phone → omit piece type. Then wait—never send off
+your own math.
 
 ---
 
@@ -335,30 +297,24 @@ One batched email. Always ask lab vs natural. Budget is design guidance. Confirm
 
 ## Phase 3c — Scheduling
 
-Read `references/SCHEDULING-FLOW.md` before offering, booking, rescheduling, or
-cancelling an appointment.
-
 Fires on meeting intent at any point. Never waits on the estimate.
 
 **Access:** `kolo integration-routing` → use exactly the returned path.
 
 **Two modes:** preset windows (Stage 3+, standing authorization) or ask-each-time.
 
-**Offering:** live free/busy → intersect with declared windows minus blackouts,
-minimum notice, meeting duration, and buffers → 2–3 specific times with
-timezone, duration, and place.
+**Offering:** live free/busy → intersect with windows → 2–3 specific times with timezone and duration.
 
-**Booking:** re-check free/busy immediately before writing → create event with
-the job number and non-sensitive preparation notes → confirm only after the
-calendar write succeeds → tell the customer date/time/timezone/duration/place
-and what to bring → one-line heads-up to owner.
+**Booking:** re-check free/busy immediately before writing → create event → confirm to customer with date/time/timezone/duration/place → one-line heads-up to owner.
 
-Reschedule the existing event instead of creating a second one. Cancellation
-removes the event but keeps the estimate open. A no-show gets one friendly
-re-offer. A declared window is permission, not proof of availability; the live
-calendar always wins.
+Reschedule by updating the existing event, not creating a duplicate.
+Cancellation removes the event but keeps the estimate alive. A no-show gets
+one friendly re-offer. A declared window is permission, not availability; the
+live calendar always wins.
 
-Timezone is critical. Pod clock is UTC — resolve everything against the owner's IANA zone.
+Timezone is critical. Pod clock is UTC—resolve everything against the owner's
+IANA zone. If it is missing, use the stored owner timezone only for internal
+date math and confirm it before stating it to a customer. Never guess.
 
 ---
 
@@ -372,10 +328,7 @@ Timezone is critical. Pod clock is UTC — resolve everything against the owner'
 
 Fill X, Y, Z from live free/busy (or preset windows). Never "let me know what works" — always 2–3 specific times with timezone. The point: the quote is a conversation starter, not a take-it-or-leave-it number.
 
-3. **Generate a rendering only when useful** — after approval, default count 1,
-aspect 4:3. Use two only for a genuine design choice or at the owner's request.
-Catalog framing, correct metal color and finish, neutral backdrop, no text or
-watermark. It is an illustration, not a shop drawing; label it accordingly.
+3. **Generate the rendering** — `image_generate`, count 2, aspect 4:3. Illustration, not a shop drawing.
 
 ### The high-end / pending-CAD note
 
@@ -391,9 +344,6 @@ Adapt the wording, never the substance: high-end estimate, pending CAD, savings 
 
 ## Phase 5 — Close the Loop
 
-Read `references/AUDIT-PAYLOAD.md` before creating or updating the estimate
-record.
-
 ```bash
 kolo record-upsert \
   --record-type "skill.jewelry_estimate" \
@@ -404,13 +354,12 @@ kolo record-upsert \
 
 Statuses: `awaiting_specs` → `pending_approval` → `estimate_sent` → `appointment_booked` → `approved` / `declined` / `dormant`.
 
-The record includes: customer and thread IDs; inbound timestamp; verified model
-ID; spec and missing fields; assumptions; internal cost lines; computed quote;
-owner-approved price; notification time and medium; event date and lead-time
-feasibility; rendering paths; appointment event ID, timezone, duration, type,
-location, and booking mode; trust stage; next action date; and
-`time_to_pending_approval_minutes`. Check for an existing record before writing
-so retries update instead of duplicate.
+The record retains the inbound timestamp; spec and missing fields; assumptions;
+cost lines, COGS, markup, computed quote, and owner-approved price; notification
+time and medium; lead-time feasibility; rendering paths; appointment event ID,
+timezone, duration, type, location, and booking mode; trust stage; and next
+action date. Check for an existing record before writing so retries update it
+instead of creating a duplicate.
 
 ```bash
 kolo log-action --agent-id main \
@@ -434,9 +383,7 @@ kolo log-action --agent-id main \
 
 **Custody and people:** never accept custody of jewelry, never discuss one customer with another, never spoil a surprise, identify as shop's assistant if required.
 
-**Process:** state assumptions always, customer-supplied specs override photo
-reads, never resolve dates against pod UTC, and never overclaim: requested is
-not approved, approved is not sent, and an invitation is not a booking.
+**Process:** state assumptions always, customer-supplied specs override photo reads, never resolve dates against pod UTC, don't overclaim.
 
 **Standing exceptions:** booking inside declared windows at Stage 3+. Price-free spec-gate asks at Stage 2+. Inbox polling at any stage once configured ★ v1.3.0.
 
