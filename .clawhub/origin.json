@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "registry": "http://cc-app.cc-app.svc.cluster.local:8000/api/v1/marketplace",
+  "slug": "jewelry-estimate-desk-testing",
+  "installedVersion": "1.3.0",
+  "installedAt": 1787107278347,
+  "artifact": {
+    "kind": "archive",
+    "sha256": "5a36b1ef3b332d0a61795299c74f10b528f7e0078f0ba593c5e99117e39f40df",
+    "integrity": "sha256-Wjax7zszLQpheVKZx08QtSj34AePC6WTxemRF+OfQN8="
+  },
+  "skillFile": {
+    "path": "SKILL.md",
+    "sha256": "3821842056f4d178c4f7e1b091c022ebbf9d5081650432d7bf356bd79fe1ca17"
+  }
+}
