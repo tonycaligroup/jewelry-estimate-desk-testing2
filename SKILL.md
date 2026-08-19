@@ -26,6 +26,12 @@ hands. Target under 15; under 5 on a familiar piece type. Logged every time.
    all-in number.
 4. **Never touch money.** No cards, deposits, refunds, or payment links.
 
+**Required Kolo model:** run this skill through a dedicated agent pinned to
+`litellm-fireworks/qwen-3-7-plus` (Alibaba Qwen 3.7 Plus), with no fallback
+model. Inbox-monitoring cron jobs must use the same `--model` override. If Kolo
+cannot verify that model for the session, stop and route the work to the pinned
+agent; never silently substitute another model.
+
 ```
 SHOP PROFILE READY? ──► no ──► STOP. Offer Phase 0 setup.
       │                        Do not process inquiries until
@@ -113,6 +119,7 @@ openclaw cron add \
   --name "jewelry-inbox-watch" \
   --cron "0 9-17 * * 1-5" \
   --tz "<owner timezone>" \
+  --model "litellm-fireworks/qwen-3-7-plus" \
   --session isolated \
   --announce \
   --channel kolo \
@@ -237,6 +244,13 @@ Don't wait for the customer to price internally. Gate governs **sending**, not c
 
 **Price both columns where a real choice exists** (lab vs natural) and recommend one.
 
+Use the shop's dated rate card and invoice-derived comparable jobs before
+market defaults. Finished weight is often the largest error source; if it is
+genuinely unknown, show the owner a bracket instead of false precision. Keep
+production cost, retail price, and replacement value separate—this workflow
+never supplies an appraisal. Print a validity date and shorten it when metal is
+a large or volatile share of the quote.
+
 ---
 
 ## Phase 3 — One Brief
@@ -255,6 +269,10 @@ kolo request-approval \
 
 Write --details JSON to a file, pass `$(cat …)`. Inline JSON breaks on shell quoting. Also message the chat — the CLI call is not a notification.
 
+Keep the computed quote and the owner-approved price separate. The number that
+goes to the customer is always the one the owner approved, even when it differs
+from the formula.
+
 ### Phase 3a — Text the owner
 
 The moment the spec gate clears and the estimate exists. Also when customer goes quiet or can't answer a gate field.
@@ -264,7 +282,10 @@ kolo set-notify-preference --show
 kolo notify-owner -m "<short, decidable from a lock screen>"
 ```
 
-Surprise rule applies to texts too. Shared phone → omit piece type. Then wait — never send off your own math.
+Confirm the owner's pinned medium. If SMS is unavailable and Kolo falls back to
+chat, say so in the brief rather than claiming a text was sent. Surprise rule
+applies to texts too. Shared phone → omit piece type. Then wait—never send off
+your own math.
 
 ---
 
@@ -286,7 +307,14 @@ Fires on meeting intent at any point. Never waits on the estimate.
 
 **Booking:** re-check free/busy immediately before writing → create event → confirm to customer with date/time/timezone/duration/place → one-line heads-up to owner.
 
-Timezone is critical. Pod clock is UTC — resolve everything against the owner's IANA zone.
+Reschedule by updating the existing event, not creating a duplicate.
+Cancellation removes the event but keeps the estimate alive. A no-show gets
+one friendly re-offer. A declared window is permission, not availability; the
+live calendar always wins.
+
+Timezone is critical. Pod clock is UTC—resolve everything against the owner's
+IANA zone. If it is missing, use the stored owner timezone only for internal
+date math and confirm it before stating it to a customer. Never guess.
 
 ---
 
@@ -325,6 +353,13 @@ kolo record-upsert \
 ```
 
 Statuses: `awaiting_specs` → `pending_approval` → `estimate_sent` → `appointment_booked` → `approved` / `declined` / `dormant`.
+
+The record retains the inbound timestamp; spec and missing fields; assumptions;
+cost lines, COGS, markup, computed quote, and owner-approved price; notification
+time and medium; lead-time feasibility; rendering paths; appointment event ID,
+timezone, duration, type, location, and booking mode; trust stage; and next
+action date. Check for an existing record before writing so retries update it
+instead of creating a duplicate.
 
 ```bash
 kolo log-action --agent-id main \
